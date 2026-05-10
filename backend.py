@@ -151,7 +151,7 @@ def load_known_faces():
 load_known_faces()
 
 # --- API Endpoints ---
-# ... (Keep existing settings/roi/history endpoints) ...
+
 
 @app.post("/faces/register")
 async def register_face(file: UploadFile = File(...), name: str = Form(...), type: str = Form("blacklist")):
@@ -197,17 +197,7 @@ async def get_faces():
     except Exception as e:
         return {"error": str(e)}
 
-# --- Video Loop Update ---
-# I need to target the video loop specifically to insert face check.
 
-# ... To avoid overwriting too much and making mistakes, I will target specific blocks. 
-# But here I am asked to provide ReplacementContent.
-# I will replace the GLOBAL VARIABLES and IMPORTS section first to include face_rec imports.
-# Then I will replace VIDEO LOOP to include the check.
-
-
-
-# ... (Previous notifications code) ...
 
 # --- API Endpoints ---
 
