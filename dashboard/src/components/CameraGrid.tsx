@@ -31,6 +31,39 @@ export default function CameraGrid() {
   const wsRef = useRef<WebSocket | null>(null);
   const alertTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  const playSiren = () => {
+    try {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContextClass) return;
+      const ctx = new AudioContextClass();
+      
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      
+      osc.type = "sine";
+      const now = ctx.currentTime;
+      
+      // Realistic security siren alarm frequency sweep
+      osc.frequency.setValueAtTime(580, now);
+      osc.frequency.linearRampToValueAtTime(950, now + 0.35);
+      osc.frequency.linearRampToValueAtTime(580, now + 0.7);
+      osc.frequency.linearRampToValueAtTime(950, now + 1.05);
+      osc.frequency.linearRampToValueAtTime(580, now + 1.4);
+      
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      
+      gain.gain.setValueAtTime(0.2, now);
+      gain.gain.linearRampToValueAtTime(0.2, now + 1.2);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + 1.4);
+      
+      osc.start(now);
+      osc.stop(now + 1.4);
+    } catch (e) {
+      console.error("Synthetic siren play error:", e);
+    }
+  };
+
   useEffect(() => {
     let ws: WebSocket;
     let reconnectInterval: NodeJS.Timeout;
@@ -54,6 +87,9 @@ export default function CameraGrid() {
             if (payload.alert) {
               setAlertCam(payload.alert.camera_id);
               setAlertMessage(payload.alert.message);
+              
+              // Play dynamic synthetic alarm sound
+              playSiren();
               
               if (alertTimeoutRef.current) {
                 clearTimeout(alertTimeoutRef.current);

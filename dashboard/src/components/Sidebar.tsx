@@ -2,13 +2,15 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, History, Settings, ShieldAlert } from "lucide-react";
+import { LayoutDashboard, History, Settings, ShieldAlert, Users, Video } from "lucide-react";
 
 export default function Sidebar() {
   const pathname = usePathname();
 
   const links = [
     { href: "/", label: "Overview", icon: LayoutDashboard },
+    { href: "/cameras", label: "Cameras", icon: Video },
+    { href: "/faces", label: "Faces", icon: Users },
     { href: "/history", label: "Alert History", icon: History },
     { href: "/settings", label: "Settings", icon: Settings },
   ];

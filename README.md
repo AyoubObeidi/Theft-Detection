@@ -1,123 +1,125 @@
-# Theft Guard AI - Advanced Anti-Theft System
+# TheftGuard AI - Advanced Anti-Theft AI Security System
 
-Theft Guard AI is a comprehensive security solution designed for retail environments. It leverages Computer Vision and Artificial Intelligence to detect suspicious behaviors such as shoplifting, fighting, and item concealment in real-time. The system processes video feeds from multiple CCTV cameras and provides instant alerts to security personnel via a modern web dashboard, Email, and Telegram.
+TheftGuard AI is an advanced, enterprise-grade video surveillance and anti-theft security solution designed for retail spaces, supermarkets, and smart facilities. It utilizes cutting-edge Computer Vision, real-time Pose Estimation, Object Detection, and Facial Recognition algorithms to detect shoplifting, loitering, restricted area intrusions, and fighting. 
 
-## System Capabilities
+The system leverages optimized, multi-threaded pipelines to analyze concurrent camera feeds (local webcams or RTSP network cameras) synchronously, triggering instant browser-synthesized audio sirens and sending remote alerts via Email and Telegram.
 
-### 1. Advanced Theft Detection
-The core of the system is built on a multi-stage AI pipeline that runs locally:
-*   **Object Detection:** Utilizes optimized YOLOv8 models to identify person and retail objects. It can be extended with specialized models ('shoplifting.pt') to directly detect theft actions.
-*   **Behavior Analysis:** Tracks the movement of hands relative to pockets/bags to detect concealment attempts (Hand-to-Pocket gestures).
-*   **Pose Estimation:** Analyzes human skeleton points to detect suspicious postures, such as bending down in aisles or reaching into restricted areas.
+---
 
-### 2. Facial Recognition System
-*   **Blacklist Monitoring:** Instantly identifies known offenders entered into the system database and triggers high-priority alerts.
-*   **VIP Detection:** Can be configured to recognize loyal customers or VIPs for personalized service.
+## 🚀 Premium System Capabilities & Key Features
 
+### 1. Multi-Threaded Camera Architecture
+*   **Asynchronous Frame Reading:** Captures frames independently via high-performance python threading (`ThreadedCamera`), avoiding sequential frame capture lag or UI freezes.
+*   **Robust Multi-Camera Tracking:** Dynamically resolves tracker ID conflicts across multiple feeds simultaneously by isolating states uniquely using camera-to-person composites `(camera_id, track_id)`.
 
-### 3. Real-Time Surveillance Dashboard
-![Dashboard Overview](docs/dashboard.png)
-built with Next.js, the dashboard offers a centralized control room experience:
-*   **Live Video Feeds:** Stream vertically or horizontally from multiple camera sources (USB or IP Cameras) simultaneously via WebSockets.
-*   **Dynamic Graphs:** Visualizes weekly and daily alert statistics to track security trends over time.
-*   **Visual Alerts:** Flashing on-screen notifications highlight the camera and timestamp of any detected event.
+### 2. Interactive Canvas ROI Drawer
+*   **HTML5 Canvas Drawing Tool:** Draw precise security boundaries (Polygons) overlaying live webcam/RTSP feeds directly inside a glassmorphic dashboard modal.
+*   **Resolution-Agnostic Scaling:** Autonomously maps client-side mouse vectors into exact `1280x720` surveillance matrix coordinates, preventing scaling discrepancies across different screen resolutions.
+*   **Camera-Specific Storage:** Camera definitions and their respective ROI coordinate lists are saved persistently inside `cameras.json`.
 
+### 3. Advanced Behavior & Posture Estimation
+*   **Item Concealment Logic:** Recognizes when a person picks up a target retail item and monitors hand-to-pocket/bag gestures, flagging potential concealment attempts.
+*   **Loitering Detection:** Evaluates how long a person dwells within a specific ROI. If loitering exceeds the configurable threshold, an alarm is triggered.
+*   **Zone Intrusion Alerts:** Instantly sounds sirens if human wrists cross into high-security zones (e.g., cash register areas, restricted aisles).
+*   **Postural Suspicion:** Detects unusual physical behavior such as sudden bending down in low-visibility aisles.
+*   **Activity Heatmaps:** Localized heatmap accumulators aggregate and visually plot customer traffic patterns individually for each camera stream.
 
+### 4. Facial Recognition & Database Panel
+*   **Face ID Classification:** A dedicated, premium **Face Management** panel to upload portrait photos, register new faces, and assign categorizations:
+    *   🔴 **Blacklist:** Automatically triggers high-priority security alarms and records evidence.
+    *   🟢 **VIP Whitelist:** Identifies trusted staff, loyal clients, or VIP visitors, showing a green greeting badge.
+*   **Instant Face Database Deletion:** One-click instant SQLite deletion with automatic memory synchronization.
 
-### 4. Alert History & Evidence
-![Alert History](docs/history.png)
-*   **Event Logging:** Every detection is saved to a local SQLite database with a timestamp, alert type, and confidence score.
-*   **Snapshot Capture:** High-resolution images of the event are automatically saved for evidence.
-*   **History Viewer:** Browse past alerts, view snapshots, and export data directly from the interface.
+### 5. Client-Side Synthetic Audio Siren
+*   **Web Audio API Integration:** Avoids brittle MP3 loading loops by synthesizing realistic, sweeping emergency sirens directly in the browser's audio processor in real-time when alarms fire.
+*   **High-Priority Cooldowns:** Protects users from noise fatigue by enforcing a 3-second smart alarm cooldown period.
 
+### 6. Centralized Glassmorphic Control Room
+*   **Performance Telemetry:** Displays dynamic CPU usage and Memory (RAM) virtual bars mapped directly from backend psutil resources.
+*   **Weekly Trends:** Integrates custom, sleek Recharts data visualizations highlighting security events categorized by "Suspicious Behavior" and "Reviewed/False Alarms".
+*   **Advanced Filtering & CSV Export:** Search historical logs by ID, message, or camera, filter by event categories, and download filtered alerts into a clean Excel/CSV file with a single click.
 
+---
 
-### 5. Remote Notifications
-Stay informed even when away from the desk:
-*   **Telegram Integration:** Sends an instant photo and caption to a specified Telegram Chat ID via Bot API.
-*   **Email Reports:** Dispatches detailed text alerts to configured email addresses using SMTP.
+## 🛠 Technical Architecture
 
-![Settings](docs/settings.png)
+*   **Backend Engine:** Python 3.10+, FastAPI (Asynchronous API endpoints & WebSockets), OpenCV (Multi-threaded streaming), Ultralytics YOLOv8 (Stand-alone Pose & Object model detection), `face_recognition` (Dlib-based CNN face encodings), SQLite3 (Database storage for logs & face matrices).
+*   **Frontend Dashboard:** Next.js 14+ (App Router), React 18, Tailwind CSS, Recharts (Modern chart libraries), Lucide React (Fluent vector icons), HSL Custom Themes (Harmonious Glassmorphic Dark UI).
 
-### 6. Customizable Security Zones
+---
 
-*   **Region of Interest (ROI):** Users can draw custom polygons on the camera feed to define sensitive areas (e.g., cash registers, high-value shelves).
-*   **Zone-Specific Rules:** Detection sensitivity can be adjusted based on whether a person is inside or outside these zones.
-
-
-
-## Technical Architecture
-
-*   **Backend:** Python, FastAPI, OpenCV, Ultralytics YOLOv8, Face Recognition, Albumentations
-*   **Frontend:** Next.js 14, React, Tailwind CSS, Recharts, Lucide React
-*   **Database:** SQLite (Lightweight, local storage for events and faces)
-*   **Communication:** WebSockets (Real-time data), SMTP (Email), HTTPS (Telegram API)
-
-## Installation Guide
+## 📦 Installation Guide
 
 ### Prerequisites
-*   Python 3.9 or higher
+*   Python 3.9 - 3.11
 *   Node.js (LTS version)
-*   NVIDIA GPU with CUDA (Recommended for real-time performance)
+*   CUDA Enabled NVIDIA GPU (Highly recommended for fluid real-time inference)
 
 ### 1. Backend Configuration
-Clone the repository and install the required Python packages:
+Clone the repository and install the Python dependencies:
 
 ```bash
-git clone https://github.com/Start-Up-Vahap/Theft-Detection.git
+git clone https://github.com/vahapogut/Theft-Detection.git
 cd Theft-Detection
 pip install -r requirements.txt
 ```
 
-If you have a specialized model (shoplifting.pt), place it in the root directory. Otherwise, the system defaults to the standard YOLOv8 model with behavior logic.
+*Note: If you have a custom pre-trained hırsızlık model (`shoplifting.pt`), place it in the root directory. The system will automatically detect it and upgrade from default pose algorithms to the specialized neural net.*
 
-### 2. Dashboard Setup
-Navigate to the dashboard directory and install dependencies:
+### 2. Dashboard UI Configuration
+Install node packages:
 
 ```bash
 cd dashboard
 npm install
 ```
 
-## Usage
+---
 
-### Auto-Start
-Simply run the helper script to launch both services:
+## 🚦 Running the System
+
+### ⚡ Automatic Startup (Windows)
+Launch both the FastAPI service and the Next.js development server concurrently with a single click:
 ```bash
 start_system.bat
 ```
 
-### Manual Startup
-**Start Backend API (Production):**
+### 🛠 Manual Startup
+**1. Start the API Server & Inference Loop:**
 ```bash
-py backend.py
+python backend.py
 ```
+*(The server will boot on `http://localhost:8000` and stream WebSockets on `ws://localhost:8000/ws`)*
 
-**Quick WebCam Test (Standalone Demo):**
-```bash
-py standalone_demo.py
-```
-
-**Start Frontend UI:**
+**2. Start the Frontend Dashboard:**
 ```bash
 cd dashboard
 npm run dev
 ```
+*(The panel will be served on `http://localhost:3000`)*
 
-Open your browser and navigate to `http://localhost:3000`.
+**3. Optional Standalone OpenCV Window Demo:**
+```bash
+python standalone_demo.py
+```
 
-## Contributing 
+---
+
+## 🤝 Contributing 
 
 1. Fork this repository.
-2. Create a feature branch ( `git checkout -b feature/NewFeature` ).
-3. Commit your changes ( `git commit -m 'Add new feature'` ).
-4. Push to the branch ( `git push origin feature/NewFeature` ).
+2. Create your feature branch (`git checkout -b feature/CoolFeature`).
+3. Commit your upgrades (`git commit -m 'feat: add cool feature'`).
+4. Push to your branch (`git push origin feature/CoolFeature`).
 5. Open a Pull Request.
 
-## License 
+---
+
+## 📄 License
 
 Distributed under the MIT License. See `LICENSE` for more information.
 
-____________________________________________________________________
+---
 
-*Developer: Abdulvahap Öğüt*
+*Project Maintainer & Developer: **Abdulvahap Öğüt***  
+*GitHub Repository:* [vahapogut/Theft-Detection](https://github.com/vahapogut/Theft-Detection)

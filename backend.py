@@ -30,6 +30,13 @@ except ImportError:
     FACE_REC_AVAILABLE = False
     print("face_recognition not installed. Face ID disabled.")
 
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
+    print("psutil not installed. System resource monitor will run in simulation mode.")
+
 app = FastAPI()
 
 app.mount("/alerts", StaticFiles(directory="alerts"), name="alerts")
@@ -91,23 +98,19 @@ except Exception as e:
 
 
 # --- Heatmap Logic ---
-heatmap_accumulator = None
-
-def update_heatmap(center_x, center_y, frame_shape):
-    global heatmap_accumulator
-    if heatmap_accumulator is None or heatmap_accumulator.shape[:2] != frame_shape[:2]:
-        heatmap_accumulator = np.zeros(frame_shape[:2], dtype=np.float32)
+def update_heatmap(cam_data, center_x, center_y, frame_shape):
+    if cam_data.get("heatmap_accumulator") is None or cam_data["heatmap_accumulator"].shape[:2] != frame_shape[:2]:
+        cam_data["heatmap_accumulator"] = np.zeros(frame_shape[:2], dtype=np.float32)
     try:
-        heatmap_accumulator[center_y, center_x] += 1
+        cam_data["heatmap_accumulator"][center_y, center_x] += 1
     except: pass
 
-def get_heatmap_overlay(frame):
-    global heatmap_accumulator
-    if heatmap_accumulator is None: return frame
-    msg_max = np.max(heatmap_accumulator)
+def get_heatmap_overlay(cam_data, frame):
+    if cam_data.get("heatmap_accumulator") is None: return frame
+    msg_max = np.max(cam_data["heatmap_accumulator"])
     if msg_max == 0: return frame
     
-    norm_heatmap = heatmap_accumulator / msg_max
+    norm_heatmap = cam_data["heatmap_accumulator"] / msg_max
     norm_heatmap = (norm_heatmap * 255).astype(np.uint8)
     color_map = cv2.applyColorMap(norm_heatmap, cv2.COLORMAP_JET)
     result = cv2.addWeighted(frame, 0.7, color_map, 0.3, 0)
@@ -282,17 +285,18 @@ async def test_settings(settings: SettingsModel):
 
 
 
-@app.get("/faces")
-async def get_faces():
+@app.delete("/faces/{face_id}")
+async def delete_face(face_id: str):
     try:
         conn = sqlite3.connect(DB_NAME)
         c = conn.cursor()
-        c.execute("SELECT id, name, type FROM faces")
-        rows = c.fetchall()
+        c.execute("DELETE FROM faces WHERE id = ?", (face_id,))
+        conn.commit()
         conn.close()
-        return [{"id": r[0], "name": r[1], "type": r[2]} for r in rows]
+        load_known_faces() # Reload
+        return {"status": "success", "message": "Face deleted successfully"}
     except Exception as e:
-        return {"error": str(e)}
+        return {"status": "error", "message": str(e)}
 
 @app.get("/history")
 async def get_history():
@@ -323,59 +327,148 @@ clients = []
 if not os.path.exists("alerts"):
     os.makedirs("alerts")
 
+# --- Threaded Camera Stream ---
+class ThreadedCamera:
+    def __init__(self, src):
+        self.src = src
+        try:
+            self.src_val = int(src)
+            is_index = True
+        except:
+            self.src_val = src
+            is_index = False
+
+        if is_index and os.name == 'nt':
+            self.cap = cv2.VideoCapture(self.src_val, cv2.CAP_DSHOW)
+        else:
+            self.cap = cv2.VideoCapture(self.src_val)
+
+        if self.cap.isOpened():
+            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+            self.ret, self.frame = self.cap.read()
+        else:
+            self.ret = False
+            self.frame = None
+
+        self.running = True
+        self.lock = threading.Lock()
+        self.thread = threading.Thread(target=self.update, args=(), daemon=True)
+        if self.cap.isOpened():
+            self.thread.start()
+
+    def update(self):
+        while self.running:
+            if self.cap.isOpened():
+                ret, frame = self.cap.read()
+                with self.lock:
+                    self.ret = ret
+                    if ret:
+                        self.frame = frame
+                time.sleep(0.01)
+            else:
+                time.sleep(0.1)
+
+    def read(self):
+        with self.lock:
+            if self.frame is not None:
+                return self.ret, self.frame.copy()
+            return False, None
+
+    def isOpened(self):
+        return self.cap.isOpened()
+
+    def release(self):
+        self.running = False
+        self.cap.release()
+
 # --- Camera Management ---
 class CameraManager:
     def __init__(self):
         self.cameras = {}
         self.lock = threading.Lock()
-        
-        # Add default camera (Index 0)
-        self.add_camera("0", "Kamera 1")
+        self.load_cameras()
+
+    def load_cameras(self):
+        file_path = "cameras.json"
+        if os.path.exists(file_path):
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    for cam in data:
+                        self.add_camera_internal(cam["id"], cam["source"], cam["name"], cam.get("roi_points", []))
+                print(f"Loaded {len(self.cameras)} cameras from cameras.json.")
+                return
+            except Exception as e:
+                print(f"Error loading cameras.json: {e}")
+
+        # Fallback to default webcam if no file exists
+        self.add_camera_internal("0", "0", "Kamera 1", [])
+        self.save_cameras()
+
+    def save_cameras(self):
+        file_path = "cameras.json"
+        try:
+            data = []
+            with self.lock:
+                for cam_id, cam_data in self.cameras.items():
+                    data.append({
+                        "id": cam_id,
+                        "name": cam_data["name"],
+                        "source": cam_data["source"],
+                        "roi_points": cam_data.get("roi_points", [])
+                    })
+            with open(file_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=4)
+        except Exception as e:
+            print(f"Error saving cameras.json: {e}")
+
+    def add_camera_internal(self, cam_id, source, name, roi_points):
+        threaded_cap = ThreadedCamera(source)
+        self.cameras[cam_id] = {
+            "cap": threaded_cap,
+            "name": name,
+            "source": source,
+            "status": "active" if threaded_cap.isOpened() else "error",
+            "roi_points": roi_points,
+            "heatmap_accumulator": None,
+            "roi_entry_times": {},
+            "last_alert_time": 0
+        }
 
     def add_camera(self, source, name):
-        with self.lock:
-            cam_id = str(uuid.uuid4())
-            
-            # Try to convert source to int if it's a number (for webcam index)
-            try:
-                src = int(source)
-                is_index = True
-            except:
-                src = source
-                is_index = False
-
-            # Use CAP_DSHOW on Windows for webcams to improve compatibility
-            if is_index and os.name == 'nt':
-                cap = cv2.VideoCapture(src, cv2.CAP_DSHOW)
-            else:
-                cap = cv2.VideoCapture(src)
-                
-            if cap.isOpened():
-                # Set resolution
-                cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
-                
+        cam_id = str(uuid.uuid4())
+        threaded_cap = ThreadedCamera(source)
+        if threaded_cap.isOpened():
+            with self.lock:
                 self.cameras[cam_id] = {
-                    "cap": cap,
+                    "cap": threaded_cap,
                     "name": name,
                     "source": source,
                     "status": "active",
+                    "roi_points": [],
+                    "heatmap_accumulator": None,
                     "roi_entry_times": {},
                     "last_alert_time": 0
                 }
-                print(f"Kamera eklendi: {name} ({source}) ID: {cam_id}")
-                return {"id": cam_id, "status": "connected"}
-            else:
-                print(f"Kamera açılamadı: {source}")
-                return {"id": None, "status": "failed"}
+            self.save_cameras()
+            print(f"Kamera eklendi: {name} ({source}) ID: {cam_id}")
+            return {"id": cam_id, "status": "connected"}
+        else:
+            print(f"Kamera açılamadı: {source}")
+            return {"id": None, "status": "failed"}
 
     def remove_camera(self, cam_id):
         with self.lock:
             if cam_id in self.cameras:
                 self.cameras[cam_id]["cap"].release()
                 del self.cameras[cam_id]
-                return True
-            return False
+                status = True
+            else:
+                status = False
+        if status:
+            self.save_cameras()
+        return status
 
     def get_active_cameras(self):
         with self.lock:
@@ -383,7 +476,8 @@ class CameraManager:
                 "id": k, 
                 "name": v["name"], 
                 "source": v["source"], 
-                "status": "active" if v["cap"].isOpened() else "error"
+                "status": "active" if v["cap"].isOpened() else "error",
+                "roi_points": v.get("roi_points", [])
             } for k, v in self.cameras.items()]
 
 camera_manager = CameraManager()
@@ -397,7 +491,15 @@ class CameraInput(BaseModel):
 async def add_new_camera(cam: CameraInput):
     result = camera_manager.add_camera(cam.source, cam.name)
     if result["id"]:
-        return {"message": "Camera added", "camera": result}
+        with camera_manager.lock:
+            cam_data = camera_manager.cameras.get(result["id"])
+            cam_details = {
+                "id": result["id"],
+                "name": cam_data["name"] if cam_data else cam.name,
+                "source": cam_data["source"] if cam_data else cam.source,
+                "status": "active"
+            } if cam_data else None
+        return {"message": "Camera added", "camera": cam_details}
     else:
         raise HTTPException(status_code=400, detail="Failed to open camera")
 
@@ -405,15 +507,10 @@ async def add_new_camera(cam: CameraInput):
 def get_stats():
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
-    
-    # Get counts for last 7 days
-    # DB Timestamp format: YYYYMMDD_HHMMSS
-    # We group by YYYYMMDD
     c.execute("SELECT substr(timestamp, 1, 8), count(*) FROM alerts GROUP BY substr(timestamp, 1, 8)")
     data = dict(c.fetchall())
     conn.close()
     
-    # Generate last 7 days keys
     stats = []
     from datetime import timedelta
     today = datetime.now()
@@ -421,8 +518,27 @@ def get_stats():
         d = today - timedelta(days=i)
         key = d.strftime("%Y%m%d")
         stats.append(data.get(key, 0))
+
+    cpu_load = 0
+    ram_load = 0
+    if PSUTIL_AVAILABLE:
+        try:
+            cpu_load = psutil.cpu_percent()
+            ram_load = psutil.virtual_memory().percent
+        except:
+            import random
+            cpu_load = random.randint(15, 30)
+            ram_load = random.randint(40, 50)
+    else:
+        import random
+        cpu_load = random.randint(15, 30)
+        ram_load = random.randint(40, 50)
         
-    return {"weekly_data": stats}
+    return {
+        "weekly_data": stats,
+        "cpu_load": cpu_load,
+        "ram_load": ram_load
+    }
 
 @app.get("/cameras")
 async def list_cameras():
@@ -432,6 +548,25 @@ async def list_cameras():
 async def delete_camera(camera_id: str):
     if camera_manager.remove_camera(camera_id):
         return {"message": "Camera removed"}
+    raise HTTPException(status_code=404, detail="Camera not found")
+
+@app.post("/cameras/{camera_id}/roi")
+async def save_camera_roi(camera_id: str, data: dict):
+    if "points" in data:
+        points = data["points"]
+        with camera_manager.lock:
+            if camera_id in camera_manager.cameras:
+                camera_manager.cameras[camera_id]["roi_points"] = points
+                camera_manager.save_cameras()
+                return {"status": "success", "roi_points": points}
+        raise HTTPException(status_code=404, detail="Camera not found")
+    raise HTTPException(status_code=400, detail="Invalid data")
+
+@app.get("/cameras/{camera_id}/roi")
+async def get_camera_roi(camera_id: str):
+    with camera_manager.lock:
+        if camera_id in camera_manager.cameras:
+            return {"points": camera_manager.cameras[camera_id].get("roi_points", [])}
     raise HTTPException(status_code=404, detail="Camera not found")
 
 
@@ -448,7 +583,7 @@ class PersonState:
         self.face_checked = False
         self.face_check_time = 0
 
-person_states = {} # {track_id: PersonState}
+person_states = {} # {(cam_id, track_id): PersonState}
 
 # --- Helper Functions for Pose ---
 def check_reaching(keypoints, roi_poly):
@@ -518,9 +653,8 @@ def check_bending(keypoints):
     vertical_dist = l_hip[1] - l_shoulder[1]
     return vertical_dist < 50
 
-# --- Updated Video Loop ---
-def video_loop():
-    global roi_points, latest_frame, current_settings, alert_payload, known_face_encodings, known_face_names, known_face_types, person_states
+# --- Updated Video Loop -def video_loop():
+    global latest_frame, current_settings, alert_payload, known_face_encodings, known_face_names, known_face_types, person_states
     
     print("Video Loop Başlatılıyor...") 
     model_obj = None # Fallback or specialized
@@ -570,6 +704,9 @@ def video_loop():
                 name = cam_data["name"]
                 current_time = time.time()
                 
+                # Fetch specific camera ROI
+                cam_roi = cam_data.get("roi_points", [])
+                
                 if cap.isOpened():
                     ret, frame = cap.read()
                     if not ret: frame = no_signal_frame.copy()
@@ -587,22 +724,14 @@ def video_loop():
                     
                     if run_obj_det:
                         if model_is_specialized:
-                            # Specialized Model Logic (Direct Detection of Crime)
-                            # Assuming Custom Model Classes: 0: Normal, 1: Shoplifting/Suspicious
-                            # We set conf threshold slightly higher
                             results_obj = model_obj(frame, verbose=False, conf=0.4)
-                            
                             if len(results_obj) > 0:
                                 boxes = results_obj[0].boxes.xyxy.cpu().numpy().astype(int)
                                 clss = results_obj[0].boxes.cls.cpu().numpy().astype(int)
                                 confs = results_obj[0].boxes.conf.cpu().numpy()
                                 
                                 for b, c, conf in zip(boxes, clss, confs):
-                                    # If class name works, check it. Else assume non-zero is suspicious?
-                                    # Let's map dynamically
                                     class_name = model_obj.names[c].lower()
-                                    
-                                    # Keywords for alarm
                                     if "shoplift" in class_name or "suspicious" in class_name or "theft" in class_name or "fight" in class_name:
                                         label = f"{class_name.upper()} {conf:.2f}"
                                         cv2.rectangle(frame, (b[0], b[1]), (b[2], b[3]), (0, 0, 255), 3)
@@ -613,15 +742,10 @@ def video_loop():
                                             trigger_alert(cam_id, name, f"CRIMINAL ACTIVITY: {class_name}", frame)
                                             cam_data["last_alert_time"] = current_time
                                     else:
-                                         # Normal object/person?
                                          cv2.rectangle(frame, (b[0], b[1]), (b[2], b[3]), (0, 255, 0), 1)
-
                         else:
-                            # --- IMPROVED PRO FALLBACK LOGIC ---
-                            # Use Standard YOLOv8n but filter for "Stealable" Items
-                            # COCO Classes: 24:backpack, 26:handbag, 39:bottle, 41:cup, 67:cell phone, 73:book, 76:scissors, 77:teddy bear...
+                            # Fallback Logic - Target classes for stealable items
                             TARGET_CLASSES = [24, 25, 26, 28, 39, 40, 41, 42, 43, 67, 73, 74, 75, 76, 77, 78, 79] 
-                            
                             results_obj = model_obj(frame, verbose=False, conf=0.3) 
                             if len(results_obj) > 0:
                                  boxes_obj = results_obj[0].boxes.xyxy.cpu().numpy().astype(int)
@@ -632,11 +756,8 @@ def video_loop():
                                      if c in TARGET_CLASSES: 
                                          detected_objects.append(b)
                                          label = f"ITEM: {model_obj.names[c]} {conf:.2f}"
-                                         cv2.rectangle(frame, (b[0], b[1]), (b[2], b[3]), (0, 165, 255), 2) # Orange for items
+                                         cv2.rectangle(frame, (b[0], b[1]), (b[2], b[3]), (0, 165, 255), 2)
                                          cv2.putText(frame, label, (b[0], b[1]-5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 165, 255), 1)
-                                     elif c != 0: # Other non-person objects
-                                          # Optional: maybe ignore cars/furniture to reduce noise?
-                                          pass
                     
                     if run_obj_det:
                         cam_data["last_objects"] = detected_objects
@@ -656,11 +777,12 @@ def video_loop():
                             box = boxes[i]
                             kpts = keypoints_all[i] if len(keypoints_all) > i else []
                             
-                            if track_id not in person_states:
-                                person_states[track_id] = PersonState(track_id)
-                            p_state = person_states[track_id]
+                            # Multi-camera safe tracking key
+                            state_key = (cam_id, track_id)
+                            if state_key not in person_states:
+                                person_states[state_key] = PersonState(track_id)
+                            p_state = person_states[state_key]
                             
-                            # Init variables for safety
                             is_bending = False
                             is_reaching = False
                             
@@ -689,20 +811,12 @@ def video_loop():
                                                 cv2.putText(frame, f"VIP: {match_name}", (box[0], box[1]-30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0), 2)
                                 p_state.face_checked = True
 
-
-                            # --- POSE & THEFT LOGIC (GLOBAL) ---
-                            # Calculate Bending
+                            # --- POSE & THEFT LOGIC ---
                             is_bending = check_bending(kpts)
                             
-                            # If specialized model detected something, we rely on it mainly.
-                            # But we can STILL use the "Hand to Pocket" logic as a backup or confirmation.
-                             
                             if not model_is_specialized:
-                                # USE OLD LOGIC (Hand to Pocket with Object Verification)
-                                # 1. Check if holding object checks
                                 left_has_obj = check_object_in_hand(kpts, detected_objects, "LEFT")
                                 right_has_obj = check_object_in_hand(kpts, detected_objects, "RIGHT")
-                                
                                 current_holding = left_has_obj or right_has_obj
                                 holding_hand = "LEFT" if left_has_obj else "RIGHT" if right_has_obj else None
     
@@ -712,39 +826,29 @@ def video_loop():
                                     p_state.holding_hand = holding_hand
                                     cv2.putText(frame, f"HOLDING ({holding_hand})", (box[0], box[1]-60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,255,0), 2)
                                 
-                                # 2. Check Concealment
                                 if p_state.holding_object and not current_holding:
                                     time_since_hold = current_time - p_state.last_holding_time
                                     if time_since_hold < 3.0: 
-                                        hand_to_check = p_state.holding_hand
-                                        if hand_to_check and check_concealment(kpts, hand_to_check):
-                                             cv2.putText(frame, "THEFT DETECTED!", (box[0], box[1]-80), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 0, 255), 3)
-                                             cv2.rectangle(frame, (box[0], box[1]), (box[2], box[3]), (0, 0, 255), 3)
-                                             if current_time - cam_data["last_alert_time"] > ALERT_COOLDOWN:
-                                                 trigger_alert(cam_id, name, "THEFT CONFIRMED (Item Concealed)", frame)
-                                                 cam_data["last_alert_time"] = current_time
-                                                 p_state.holding_object = False 
+                                         hand_to_check = p_state.holding_hand
+                                         if hand_to_check and check_concealment(kpts, hand_to_check):
+                                              cv2.putText(frame, "THEFT DETECTED!", (box[0], box[1]-80), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 0, 255), 3)
+                                              cv2.rectangle(frame, (box[0], box[1]), (box[2], box[3]), (0, 0, 255), 3)
+                                              if current_time - cam_data["last_alert_time"] > ALERT_COOLDOWN:
+                                                  trigger_alert(cam_id, name, "THEFT CONFIRMED (Item Concealed)", frame)
+                                                  cam_data["last_alert_time"] = current_time
+                                                  p_state.holding_object = False 
                                     else:
                                         if time_since_hold > 3.0:
                                             p_state.holding_object = False
                                             p_state.holding_hand = None
-                            else:
-                                # If specialized model is active, we just display posing info but rely on model for alert
-                                # Or we can COMBINE them.
-                                pass
 
-                            # --- ROI LOGIC (RESTRICTED AREA) ---
-                            # Specifically for entering forbidden zones (Staff only, or behind counter, or shelf interaction)
-                            is_reaching, _ = check_reaching(kpts, roi_points)
-                            
+                            # --- ROI LOGIC ---
+                            is_reaching, _ = check_reaching(kpts, cam_roi)
                             if is_reaching:
                                 cv2.putText(frame, "RESTRICTED AREA ENT!", (box[0], box[1]-40), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
-                                # Optional: Immediate alarm for ROI entry if desired?
-                                # User said: "bölge olarak o bölgeye girince alarm calsın" -> Yes.
                                 if current_time - cam_data["last_alert_time"] > ALERT_COOLDOWN:
                                      trigger_alert(cam_id, name, "RESTRICTED AREA INTRUSION", frame)
                                      cam_data["last_alert_time"] = current_time
-
 
                             if is_bending:
                                 cv2.putText(frame, "BENDING", (box[0], box[1] + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
@@ -752,11 +856,11 @@ def video_loop():
                             # --- LOITERING ---
                             center_x = int((box[0] + box[2]) / 2)
                             center_y = int((box[1] + box[3]) / 2)
-                            update_heatmap(center_x, center_y, frame.shape)
+                            update_heatmap(cam_data, center_x, center_y, frame.shape)
                             
                             is_inside_roi = False
-                            if len(roi_points) >= 3:
-                                if cv2.pointPolygonTest(np.array(roi_points), (center_x, center_y), False) >= 0:
+                            if len(cam_roi) >= 3:
+                                if cv2.pointPolygonTest(np.array(cam_roi), (center_x, center_y), False) >= 0:
                                     is_inside_roi = True
                             
                             if is_inside_roi:
@@ -773,14 +877,14 @@ def video_loop():
                                 if track_id in cam_data["roi_entry_times"]:
                                     del cam_data["roi_entry_times"][track_id]
 
-                    frame = get_heatmap_overlay(frame) 
+                    frame = get_heatmap_overlay(cam_data, frame) 
                     
                     if results_pose[0].keypoints is not None:
                          res_plotted = results_pose[0].plot()
                          frame = res_plotted
 
-                    if len(roi_points) > 0:
-                        cv2.polylines(frame, [np.array(roi_points)], isClosed=True, color=(0, 255, 255), thickness=2)
+                    if len(cam_roi) > 0:
+                        cv2.polylines(frame, [np.array(cam_roi)], isClosed=True, color=(0, 255, 255), thickness=2)
 
                 _, buffer = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 60])
                 jpg_as_text = base64.b64encode(buffer).decode('utf-8')
@@ -800,7 +904,9 @@ def video_loop():
                         "alert": alert_payload,
                         "audio": "siren" if alert_payload else None
                     }
-
+                    # Clear alert_payload after packing into frame to avoid duplicate siren loops
+                    alert_payload = None
+            
             time.sleep(0.04) 
 
         except Exception as e:

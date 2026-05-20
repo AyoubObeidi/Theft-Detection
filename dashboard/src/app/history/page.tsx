@@ -13,11 +13,13 @@ interface AlertHistory {
 export default function HistoryPage() {
   const [history, setHistory] = useState<AlertHistory[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedType, setSelectedType] = useState("All Event Types");
 
   useEffect(() => {
     const fetchHistory = async () => {
       try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/history`);
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/history`);
         if (response.ok) {
           const data = await response.json();
           setHistory(data);
@@ -42,6 +44,48 @@ export default function HistoryPage() {
     return `${year}-${month}-${day} ${hour}:${min}:${sec}`;
   };
 
+  // Advanced client-side filtering matching logic
+  const filteredHistory = history.filter((event) => {
+    const matchesSearch = 
+      event.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      event.message.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      event.image_path.toLowerCase().includes(searchQuery.toLowerCase());
+
+    let matchesType = true;
+    if (selectedType === "Suspicious Behavior") {
+      matchesType = event.message.includes("SUSPICION") || event.message.includes("RESTRICTED") || event.message.includes("CRIMINAL");
+    } else if (selectedType === "Blacklisted Face") {
+      matchesType = event.message.includes("BLACKLIST");
+    } else if (selectedType === "Item Concealment") {
+      matchesType = event.message.includes("THEFT") || event.message.includes("Concealed");
+    }
+
+    return matchesSearch && matchesType;
+  });
+
+  // Client-side CSV export trigger
+  const handleExportCSV = () => {
+    if (filteredHistory.length === 0) return;
+    const headers = ["Event ID", "Timestamp", "Alert Message", "Evidence Path"];
+    const rows = filteredHistory.map(event => [
+      event.id,
+      formatTime(event.timestamp),
+      event.message,
+      event.image_path
+    ]);
+    
+    const csvContent = "data:text/csv;charset=utf-8,\uFEFF" 
+      + [headers.join(","), ...rows.map(r => r.map(val => `"${val.replace(/"/g, '""')}"`).join(","))].join("\n");
+      
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `TheftGuard_Alarmlar_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="max-w-6xl mx-auto pb-10">
       <header className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
@@ -54,7 +98,11 @@ export default function HistoryPage() {
             <Calendar className="w-4 h-4" />
             Last 7 Days
           </button>
-          <button className="flex items-center gap-2 px-4 py-2 bg-glass border border-glass-border rounded-lg hover:bg-white/5 transition-colors text-sm font-medium">
+          <button 
+            onClick={handleExportCSV}
+            disabled={filteredHistory.length === 0}
+            className="flex items-center gap-2 px-4 py-2 bg-brand/20 border border-brand/35 hover:bg-brand/30 text-brand rounded-lg transition-colors text-sm font-bold cursor-pointer disabled:opacity-50"
+          >
             <Download className="w-4 h-4" />
             Export CSV
           </button>
@@ -67,15 +115,21 @@ export default function HistoryPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground/50" />
             <input 
               type="text" 
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
               placeholder="Search by event ID, type, or camera..." 
               className="w-full bg-black/40 border border-glass-border rounded-lg pl-9 pr-4 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-brand"
             />
           </div>
-          <select className="bg-black/40 border border-glass-border rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
-            <option>All Event Types</option>
-            <option>Suspicious Behavior</option>
-            <option>Blacklisted Face</option>
-            <option>Item Concealment</option>
+          <select 
+            value={selectedType}
+            onChange={e => setSelectedType(e.target.value)}
+            className="bg-black/40 border border-glass-border rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-brand text-foreground"
+          >
+            <option className="bg-[#0f111a]">All Event Types</option>
+            <option className="bg-[#0f111a]">Suspicious Behavior</option>
+            <option className="bg-[#0f111a]">Blacklisted Face</option>
+            <option className="bg-[#0f111a]">Item Concealment</option>
           </select>
         </div>
 
@@ -98,29 +152,34 @@ export default function HistoryPage() {
                     Loading history...
                   </td>
                 </tr>
-              ) : history.length === 0 ? (
+              ) : filteredHistory.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="p-8 text-center text-foreground/60">
-                    No alert history found.
+                    No alert history found matching search criteria.
                   </td>
                 </tr>
               ) : (
-                history.map((event) => (
+                filteredHistory.map((event) => (
                   <tr key={event.id} className="border-b border-glass-border/50 hover:bg-white/[0.02] transition-colors">
                     <td className="p-4 font-mono text-brand text-xs">{event.id.slice(0, 8)}...</td>
                     <td className="p-4 text-foreground/80">{formatTime(event.timestamp)}</td>
                     <td className="p-4">
-                      <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${
-                        event.message.includes('THEFT') || event.message.includes('CRIMINAL') ? 'bg-danger/20 text-danger' : 
-                        event.message.includes('BLACKLIST') || event.message.includes('RESTRICTED') ? 'bg-orange-500/20 text-orange-400' :
-                        'bg-blue-500/20 text-blue-400'
+                      <span className={`inline-block px-2 py-1 rounded text-xs font-semibold ${
+                        event.message.includes('THEFT') || event.message.includes('CRIMINAL') ? 'bg-danger/20 text-danger border border-danger/20' : 
+                        event.message.includes('BLACKLIST') || event.message.includes('RESTRICTED') ? 'bg-orange-500/20 text-orange-400 border border-orange-500/20' :
+                        'bg-blue-500/20 text-blue-400 border border-blue-500/20'
                       }`}>
                         {event.message}
                       </span>
                     </td>
                     <td className="p-4 font-mono text-xs text-foreground/60">{event.image_path}</td>
                     <td className="p-4 text-center">
-                      <a href={`${process.env.NEXT_PUBLIC_API_URL}/${event.image_path}`} target="_blank" rel="noreferrer" className="p-1.5 rounded hover:bg-white/10 text-foreground/70 hover:text-brand transition-colors inline-block">
+                      <a 
+                        href={`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/${event.image_path}`} 
+                        target="_blank" 
+                        rel="noreferrer" 
+                        className="p-1.5 rounded hover:bg-white/10 text-foreground/70 hover:text-brand transition-colors inline-block cursor-pointer"
+                      >
                         <ImageIcon className="w-4 h-4" />
                       </a>
                     </td>
@@ -131,12 +190,12 @@ export default function HistoryPage() {
           </table>
         </div>
         
-        {!loading && history.length > 0 && (
+        {!loading && filteredHistory.length > 0 && (
           <div className="p-4 border-t border-glass-border flex items-center justify-between text-sm text-foreground/60">
-            <div>Showing {history.length} entries</div>
+            <div>Showing {filteredHistory.length} of {history.length} entries</div>
             <div className="flex gap-1">
               <button className="px-3 py-1 border border-glass-border rounded hover:bg-white/5 disabled:opacity-50" disabled>Prev</button>
-              <button className="px-3 py-1 bg-brand text-white rounded">1</button>
+              <button className="px-3 py-1 bg-brand text-white rounded font-bold">1</button>
               <button className="px-3 py-1 border border-glass-border rounded hover:bg-white/5 disabled:opacity-50" disabled>Next</button>
             </div>
           </div>
