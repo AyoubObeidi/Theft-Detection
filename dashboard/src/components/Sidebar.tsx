@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, History, Settings, ShieldAlert, Users, Video } from "lucide-react";
+import { LayoutDashboard, History, Settings, Users, Video } from "lucide-react";
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -17,8 +17,7 @@ export default function Sidebar() {
 
   return (
     <aside className="w-64 glass-panel border-l-0 rounded-l-none min-h-screen flex flex-col p-4">
-      <div className="flex items-center gap-3 mb-10 px-2 mt-4">
-        <ShieldAlert className="w-8 h-8 text-brand" />
+      <div className="flex items-center mb-10 px-2 mt-4">
         <h1 className="text-xl font-bold tracking-wider">
           <span className="text-brand">Theft</span>Guard
         </h1>
