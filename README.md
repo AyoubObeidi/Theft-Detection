@@ -4,6 +4,8 @@ TheftGuard AI is an advanced, enterprise-grade video surveillance and anti-theft
 
 The system leverages optimized, multi-threaded pipelines to analyze concurrent camera feeds (local webcams or RTSP network cameras) synchronously, triggering instant browser-synthesized audio sirens and sending remote alerts via Email and Telegram.
 
+![TheftGuard Dashboard Showcase](docs/dashboard.png)
+
 ---
 
 ## 🚀 Premium System Capabilities & Key Features
@@ -16,6 +18,8 @@ The system leverages optimized, multi-threaded pipelines to analyze concurrent c
 *   **HTML5 Canvas Drawing Tool:** Draw precise security boundaries (Polygons) overlaying live webcam/RTSP feeds directly inside a glassmorphic dashboard modal.
 *   **Resolution-Agnostic Scaling:** Autonomously maps client-side mouse vectors into exact `1280x720` surveillance matrix coordinates, preventing scaling discrepancies across different screen resolutions.
 *   **Camera-Specific Storage:** Camera definitions and their respective ROI coordinate lists are saved persistently inside `cameras.json`.
+
+![Camera Setup & Configuration](docs/cameras.png)
 
 ### 3. Advanced Behavior & Posture Estimation
 *   **Item Concealment Logic:** Recognizes when a person picks up a target retail item and monitors hand-to-pocket/bag gestures, flagging potential concealment attempts.
@@ -30,14 +34,21 @@ The system leverages optimized, multi-threaded pipelines to analyze concurrent c
     *   🟢 **VIP Whitelist:** Identifies trusted staff, loyal clients, or VIP visitors, showing a green greeting badge.
 *   **Instant Face Database Deletion:** One-click instant SQLite deletion with automatic memory synchronization.
 
-### 5. Client-Side Synthetic Audio Siren
+![Face Recognition Management](docs/faces.png)
+
+### 5. Client-Side Synthetic Audio Siren & Notifications
 *   **Web Audio API Integration:** Avoids brittle MP3 loading loops by synthesizing realistic, sweeping emergency sirens directly in the browser's audio processor in real-time when alarms fire.
 *   **High-Priority Cooldowns:** Protects users from noise fatigue by enforcing a 3-second smart alarm cooldown period.
+*   **Telegram & SMTP Setup:** Instantly broadcast alerts and snapshots via Telegram chat integrations and automated Email notifications.
+
+![Notification Settings](docs/settings.png)
 
 ### 6. Centralized Glassmorphic Control Room
 *   **Performance Telemetry:** Displays dynamic CPU usage and Memory (RAM) virtual bars mapped directly from backend psutil resources.
 *   **Weekly Trends:** Integrates custom, sleek Recharts data visualizations highlighting security events categorized by "Suspicious Behavior" and "Reviewed/False Alarms".
 *   **Advanced Filtering & CSV Export:** Search historical logs by ID, message, or camera, filter by event categories, and download filtered alerts into a clean Excel/CSV file with a single click.
+
+![Alert History](docs/history.png)
 
 ---
 
