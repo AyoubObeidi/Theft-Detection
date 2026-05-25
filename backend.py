@@ -3,6 +3,7 @@ import asyncio
 import base64
 import os
 from dotenv import load_dotenv
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -1019,10 +1020,13 @@ async def websocket_endpoint(websocket: WebSocket):
     except Exception as e:
         print(f"Error: {e}")
 
-@app.on_event("startup")
-def startup_event():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     t = threading.Thread(target=video_loop, daemon=True)
     t.start()
+    yield
+
+app.router.lifespan_context = lifespan
 
 if __name__ == "__main__":
     import uvicorn

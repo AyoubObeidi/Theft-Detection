@@ -8,3 +8,4 @@ lapx
 requests
 face_recognition
 python-dotenv
+psutil
