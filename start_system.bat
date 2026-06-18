@@ -1,12 +1,12 @@
 @echo off
-title Theft Guard AI Launcher
+title Theft Detection Launcher
 color 0A
 
 set "PROJECT_DIR=%~dp0"
 set "DASHBOARD_DIR=%PROJECT_DIR%dashboard"
 
 echo ==================================================
-echo   THEFT GUARD AI - Theft Detection System
+echo   THEFT DETECTION SYSTEM
 echo   Starting up... Please wait.
 echo ==================================================
 echo.
@@ -24,14 +24,14 @@ if exist "%DASHBOARD_DIR%\node_modules" (
 
 :: 2. Start Backend (in new window)
 echo [2/3] Starting Backend Service (Python/FastAPI)...
-start "Theft Guard Backend" cmd /k "cd /d "%PROJECT_DIR%" && py backend.py"
+start "Theft Detection Backend" cmd /k "cd /d "%PROJECT_DIR%" && py backend.py"
 
 :: Wait for backend to initialize
 timeout /t 3 /nobreak >nul
 
 :: 3. Start Frontend (in new window)
 echo [3/3] Starting Dashboard (Next.js)...
-start "Theft Guard Dashboard" cmd /k "cd /d "%DASHBOARD_DIR%" && npm run dev"
+start "Theft Detection Dashboard" cmd /k "cd /d "%DASHBOARD_DIR%" && npm run dev"
 
 :: Wait for frontend compilation
 timeout /t 5 /nobreak >nul

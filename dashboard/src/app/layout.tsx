@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "TheftGuard Dashboard",
+  title: "Theft Detection Dashboard",
   description: "Advanced Anti-Theft AI System Dashboard",
 };
 

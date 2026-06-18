@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Search, Download, ExternalLink, Calendar, Loader2, Image as ImageIcon } from "lucide-react";
+import { Search, Download, Calendar, Loader2, Image as ImageIcon, Trash2, CheckCircle, AlertCircle } from "lucide-react";
 
 interface AlertHistory {
   id: string;
@@ -15,6 +15,12 @@ export default function HistoryPage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedType, setSelectedType] = useState("All Event Types");
+  const [deleteLoadingId, setDeleteLoadingId] = useState<string | null>(null);
+  const [clearingAll, setClearingAll] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [message, setMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
+
+  const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
   useEffect(() => {
     const fetchHistory = async () => {
@@ -42,6 +48,55 @@ export default function HistoryPage() {
     const min = ts.slice(11, 13);
     const sec = ts.slice(13, 15);
     return `${year}-${month}-${day} ${hour}:${min}:${sec}`;
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this alert record?")) return;
+
+    setDeleteLoadingId(id);
+    setMessage(null);
+
+    try {
+      const res = await fetch(`${apiBaseUrl}/history/${id}`, { method: "DELETE" });
+      const data = await res.json();
+
+      if (res.ok && data.status === "success") {
+        setHistory((prev) => prev.filter((e) => e.id !== id));
+        setMessage({ text: "Alert deleted successfully.", type: "success" });
+      } else {
+        setMessage({ text: data.message || "Failed to delete alert.", type: "error" });
+      }
+    } catch (err) {
+      console.error(err);
+      setMessage({ text: "Connection error. Make sure the backend is running.", type: "error" });
+    } finally {
+      setDeleteLoadingId(null);
+    }
+  };
+
+  const handleDeleteAll = async () => {
+    if (history.length === 0) return;
+
+    setShowConfirm(false);
+    setClearingAll(true);
+    setMessage(null);
+
+    try {
+      const res = await fetch(`${apiBaseUrl}/history`, { method: "DELETE" });
+      const data = await res.json();
+
+      if (res.ok && data.status === "success") {
+        setHistory([]);
+        setMessage({ text: "All alerts deleted successfully.", type: "success" });
+      } else {
+        setMessage({ text: data.message || "Failed to delete alerts.", type: "error" });
+      }
+    } catch (err) {
+      console.error(err);
+      setMessage({ text: "Connection error. Make sure the backend is running.", type: "error" });
+    } finally {
+      setClearingAll(false);
+    }
   };
 
   // Advanced client-side filtering matching logic
@@ -80,7 +135,7 @@ export default function HistoryPage() {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `TheftGuard_Alarmlar_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute("download", `Theft_Detection_Alerts_${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -106,8 +161,29 @@ export default function HistoryPage() {
             <Download className="w-4 h-4" />
             Export CSV
           </button>
+          <button
+            onClick={() => setShowConfirm(true)}
+            disabled={clearingAll || history.length === 0}
+            className="flex items-center gap-2 px-4 py-2 bg-danger/20 border border-danger/35 hover:bg-danger/30 text-danger rounded-lg transition-colors text-sm font-bold cursor-pointer disabled:opacity-50"
+          >
+            {clearingAll ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+            Delete All
+          </button>
         </div>
       </header>
+
+      {message && (
+        <div
+          className={`mb-6 p-4 rounded-lg flex items-center gap-3 border ${
+            message.type === "success"
+              ? "bg-green-500/10 border-green-500/30 text-green-400"
+              : "bg-danger/10 border-danger/30 text-danger"
+          }`}
+        >
+          {message.type === "success" ? <CheckCircle className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
+          <span className="text-sm font-medium">{message.text}</span>
+        </div>
+      )}
 
       <div className="glass-panel overflow-hidden">
         <div className="p-4 border-b border-glass-border flex gap-4">
@@ -142,19 +218,20 @@ export default function HistoryPage() {
                 <th className="p-4 font-medium">Detection Type</th>
                 <th className="p-4 font-medium">Image Path</th>
                 <th className="p-4 font-medium text-center">Snapshot</th>
+                <th className="p-4 font-medium text-center">Actions</th>
               </tr>
             </thead>
             <tbody className="text-sm">
               {loading ? (
                 <tr>
-                  <td colSpan={5} className="p-8 text-center text-foreground/60">
+                  <td colSpan={6} className="p-8 text-center text-foreground/60">
                     <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
                     Loading history...
                   </td>
                 </tr>
               ) : filteredHistory.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="p-8 text-center text-foreground/60">
+                  <td colSpan={6} className="p-8 text-center text-foreground/60">
                     No alert history found matching search criteria.
                   </td>
                 </tr>
@@ -174,14 +251,28 @@ export default function HistoryPage() {
                     </td>
                     <td className="p-4 font-mono text-xs text-foreground/60">{event.image_path}</td>
                     <td className="p-4 text-center">
-                      <a 
-                        href={`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/${event.image_path}`} 
-                        target="_blank" 
-                        rel="noreferrer" 
+                      <a
+                        href={`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/${event.image_path}`}
+                        target="_blank"
+                        rel="noreferrer"
                         className="p-1.5 rounded hover:bg-white/10 text-foreground/70 hover:text-brand transition-colors inline-block cursor-pointer"
                       >
                         <ImageIcon className="w-4 h-4" />
                       </a>
+                    </td>
+                    <td className="p-4 text-center">
+                      <button
+                        onClick={() => handleDelete(event.id)}
+                        disabled={deleteLoadingId === event.id}
+                        className="p-1.5 rounded hover:bg-danger/10 text-foreground/70 hover:text-danger transition-colors inline-block cursor-pointer disabled:opacity-50"
+                        title="Delete"
+                      >
+                        {deleteLoadingId === event.id ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="w-4 h-4" />
+                        )}
+                      </button>
                     </td>
                   </tr>
                 ))
@@ -201,6 +292,41 @@ export default function HistoryPage() {
           </div>
         )}
       </div>
+
+      {showConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md transition-all duration-300">
+          <div className="glass-panel w-full max-w-md border border-glass-border shadow-2xl relative animate-in fade-in zoom-in-95 duration-200 p-6">
+            <div className="flex items-start gap-4">
+              <div className="p-3 rounded-full bg-danger/10 border border-danger/30 text-danger shrink-0">
+                <AlertCircle className="w-6 h-6" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-bold text-foreground mb-1">Delete all alerts?</h3>
+                <p className="text-sm text-foreground/60">
+                  This permanently removes all {history.length} alert(s) and their snapshots. This action cannot be undone.
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => setShowConfirm(false)}
+                disabled={clearingAll}
+                className="px-4 py-2 bg-glass border border-glass-border rounded-lg hover:bg-white/5 transition-colors text-sm font-medium cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteAll}
+                disabled={clearingAll}
+                className="flex items-center gap-2 px-4 py-2 bg-danger hover:bg-danger/90 text-white rounded-lg transition-colors text-sm font-bold cursor-pointer disabled:opacity-50"
+              >
+                {clearingAll ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                Delete All
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

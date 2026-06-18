@@ -1,13 +1,13 @@
 {
-    "emailEnabled": false,
+    "emailEnabled": true,
     "smtpServer": "smtp.gmail.com",
     "smtpPort": "587",
-    "senderEmail": "",
+    "senderEmail": "ayob75518@gmail.com",
     "senderPassword": "",
-    "receiverEmail": "",
-    "telegramEnabled": false,
+    "receiverEmail": "ayoubmacos05@gmail.com",
+    "telegramEnabled": true,
     "telegramBotToken": "",
-    "telegramChatId": "",
+    "telegramChatId": "5272836623",
     "roiPoints": [],
     "showHeatmap": true
 }

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, History, Settings, Users, Video } from "lucide-react";
+import { LayoutDashboard, History, Settings, Users, Video, FileVideo } from "lucide-react";
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -10,6 +10,7 @@ export default function Sidebar() {
   const links = [
     { href: "/", label: "Overview", icon: LayoutDashboard },
     { href: "/cameras", label: "Cameras", icon: Video },
+    { href: "/video-analysis", label: "Video Analysis", icon: FileVideo },
     { href: "/faces", label: "Faces", icon: Users },
     { href: "/history", label: "Alert History", icon: History },
     { href: "/settings", label: "Settings", icon: Settings },
@@ -19,7 +20,7 @@ export default function Sidebar() {
     <aside className="w-64 glass-panel border-l-0 rounded-l-none min-h-screen flex flex-col p-4">
       <div className="flex items-center mb-10 px-2 mt-4">
         <h1 className="text-xl font-bold tracking-wider">
-          <span className="text-brand">Theft</span>Guard
+          <span className="text-brand">Theft</span> Detection
         </h1>
       </div>
 

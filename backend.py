@@ -45,6 +45,10 @@ app = FastAPI()
 
 app.mount("/alerts", StaticFiles(directory="alerts"), name="alerts")
 
+if not os.path.exists("analyzed"):
+    os.makedirs("analyzed")
+app.mount("/analyzed", StaticFiles(directory="analyzed"), name="analyzed")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000"],
@@ -315,6 +319,53 @@ async def get_history():
     except Exception as e:
         return {"error": str(e)}
 
+# Note: API route is /history/{id} because /alerts is a static file mount (snapshots)
+@app.delete("/history/{alert_id}")
+async def delete_alert(alert_id: str):
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        c = conn.cursor()
+        # Grab the snapshot path first so we can remove the file too
+        c.execute("SELECT image_path FROM alerts WHERE id = ?", (alert_id,))
+        row = c.fetchone()
+        c.execute("DELETE FROM alerts WHERE id = ?", (alert_id,))
+        conn.commit()
+        conn.close()
+
+        if row and row[0] and os.path.exists(row[0]):
+            try:
+                os.remove(row[0])
+            except Exception:
+                pass
+
+        return {"status": "success", "message": "Alert deleted successfully"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.delete("/history")
+async def delete_all_alerts():
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        c = conn.cursor()
+        # Collect snapshot paths first so we can remove the files too
+        c.execute("SELECT image_path FROM alerts")
+        rows = c.fetchall()
+        c.execute("DELETE FROM alerts")
+        conn.commit()
+        conn.close()
+
+        for row in rows:
+            path = row[0]
+            if path and os.path.exists(path):
+                try:
+                    os.remove(path)
+                except Exception:
+                    pass
+
+        return {"status": "success", "message": "All alerts deleted", "deleted": len(rows)}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 # --- Video Logic ---
 
 # Global variables
@@ -407,7 +458,7 @@ class CameraManager:
                 print(f"Error loading cameras.json: {e}")
 
         # Fallback to default webcam if no file exists
-        self.add_camera_internal("0", "0", "Kamera 1", [])
+        self.add_camera_internal("0", "0", "Camera 1", [])
         self.save_cameras()
 
     def save_cameras(self):
@@ -456,10 +507,10 @@ class CameraManager:
                     "last_alert_time": 0
                 }
             self.save_cameras()
-            print(f"Kamera eklendi: {name} ({source}) ID: {cam_id}")
+            print(f"Camera added: {name} ({source}) ID: {cam_id}")
             return {"id": cam_id, "status": "connected"}
         else:
-            print(f"Kamera açılamadı: {source}")
+            print(f"Could not open camera: {source}")
             return {"id": None, "status": "failed"}
 
     def remove_camera(self, cam_id):
@@ -661,7 +712,7 @@ def check_bending(keypoints):
 def video_loop():
     global latest_frame, current_settings, alert_payload, known_face_encodings, known_face_names, known_face_types, person_states
     
-    print("Video Loop Başlatılıyor...") 
+    print("Starting video loop...")
     model_obj = None # Fallback or specialized
     model_is_specialized = False
     
@@ -674,16 +725,16 @@ def video_loop():
             # Try to load specialized model first
             model_obj = YOLO('shoplifting.pt')
             model_is_specialized = True
-            print("Özel Hırsızlık Modeli Yüklendi! (shoplifting.pt)")
+            print("Specialized shoplifting model loaded! (shoplifting.pt)")
         except:
-            print("Özel model bulunamadı, standart nesne takibine (yolov8n.pt) geçiliyor...")
+            print("Specialized model not found, falling back to standard object tracking (yolov8n.pt)...")
             try:
                 model_obj = YOLO('yolov8n.pt')
             except Exception as e:
-                print(f"Standart Model de yüklenemedi: {e}")
+                print(f"Standard model could not be loaded either: {e}")
                 model_obj = None
 
-        print("Modeller hazır.")
+        print("Models ready.")
     except Exception as e:
         print(f"CRITICAL MODEL ERROR: {e}")
         with open("error_log.txt", "a") as f:
@@ -692,7 +743,7 @@ def video_loop():
 
     frame_count = 0
     no_signal_frame = np.zeros((720, 1280, 3), dtype=np.uint8)
-    cv2.putText(no_signal_frame, "SINYAL YOK", (400, 360), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 255), 3)
+    cv2.putText(no_signal_frame, "NO SIGNAL", (400, 360), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 255), 3)
 
     while True:
         try:
@@ -921,48 +972,55 @@ def video_loop():
             time.sleep(1)
 
 
-def trigger_alert(cam_id, cam_name, message, frame):
+def trigger_alert(cam_id, cam_name, message, frame, notify=True):
     global alert_payload
     try:
         print(f"ALERT: {message}")
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"alerts/alert_{cam_id}_{timestamp}.jpg"
+        alert_id = str(uuid.uuid4())
+        # Short uuid in the filename so multiple alerts in the same second don't overwrite each other
+        filename = f"alerts/alert_{cam_id}_{timestamp}_{alert_id[:8]}.jpg"
         cv2.imwrite(filename, frame)
-        
+
         # database
         conn = sqlite3.connect(DB_NAME)
         c = conn.cursor()
-        alert_id = str(uuid.uuid4())
         c.execute("INSERT INTO alerts VALUES (?,?,?,?)", (alert_id, message, timestamp, filename))
         conn.commit()
         conn.close()
-        
+
+        alert_data = {
+            "id": alert_id,
+            "message": message,
+            "timestamp": timestamp,
+            "image_path": filename,
+            "camera_id": cam_id
+        }
         with lock:
-            alert_payload = {
-                "id": alert_id,
-                "message": message,
-                "timestamp": timestamp,
-                "image_path": filename,
-                "camera_id": cam_id
-            }
-            
+            alert_payload = alert_data
+
         # Send Email/Telegram if enabled (Settings)
-        # We can implement a fire-and-forget thread for this to not block loop
-        threading.Thread(target=send_notifications, args=(message, filename)).start()
-        
+        # Fire-and-forget thread so it doesn't block the loop. Skipped for offline video analysis.
+        if notify:
+            threading.Thread(target=send_notifications, args=(message, filename)).start()
+
+        return alert_data
     except Exception as e:
         print(f"Alert Error: {e}")
+        return None
 
 def send_notifications(message, image_path):
-    try:
-        if current_settings.emailEnabled:
+    # Email and Telegram are sent independently: a failure in one channel
+    # (e.g. invalid SMTP credentials) must not block the other from sending.
+    if current_settings.emailEnabled:
+        try:
             sender_email = os.getenv("SENDER_EMAIL", current_settings.senderEmail)
             sender_password = os.getenv("SMTP_PASSWORD", current_settings.senderPassword)
             if sender_email and sender_password:
                 msg = MIMEMultipart()
                 msg['From'] = sender_email
                 msg['To'] = current_settings.receiverEmail
-                msg['Subject'] = "Theft Guard AI - Security Alert"
+                msg['Subject'] = "Theft Detection - Security Alert"
                 
                 body = f"ALERT: {message}\nTimestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
                 msg.attach(MIMEText(body, 'plain'))
@@ -981,22 +1039,221 @@ def send_notifications(message, image_path):
                 server.send_message(msg)
                 server.quit()
                 print("Email notification sent.")
+        except Exception as e:
+            print(f"Email Error: {e}")
 
-        if current_settings.telegramEnabled:
+    if current_settings.telegramEnabled:
+        try:
             bot_token = os.getenv("TELEGRAM_BOT_TOKEN", current_settings.telegramBotToken)
             chat_id = current_settings.telegramChatId
             if bot_token and chat_id:
                 url = f"https://api.telegram.org/bot{bot_token}/sendPhoto"
                 with open(image_path, 'rb') as photo:
-                    data = {"chat_id": chat_id, "caption": f"🚨 THEFT GUARD ALERT 🚨\n\n{message}"}
+                    data = {"chat_id": chat_id, "caption": f"🚨 THEFT DETECTION ALERT 🚨\n\n{message}"}
                     files = {"photo": photo}
                     resp = requests.post(url, data=data, files=files)
                 if resp.status_code == 200:
                     print("Telegram notification sent.")
                 else:
                     print(f"Telegram Error: {resp.text}")
+        except Exception as e:
+            print(f"Telegram Error: {e}")
+
+
+# --- Offline Video File Analysis ---
+def analyze_video_file(video_path, cam_id, cam_name, notify=True):
+    """Run the theft-detection pipeline over an uploaded video file.
+
+    Loads its own YOLO instances so it never corrupts the live loop's tracker
+    state, and uses a local person-state dict + video-time cooldown (cooldown is
+    measured in seconds of the video, not wall-clock, since we process as fast as
+    the CPU allows). When notify=True, each detection also fires the configured
+    Telegram/email alerts. Returns (frames_processed, list_of_alert_dicts).
+    """
+    alerts = []
+
+    # Dedicated model instances (separate tracker state from the live video_loop)
+    try:
+        print("Video analyze: loading pose model...")
+        local_pose = YOLO('yolov8n-pose.pt')
     except Exception as e:
-        print(f"Notification Error: {e}")
+        print(f"Video analyze: pose model load failed: {e}")
+        return 0, alerts, None
+
+    local_obj = None
+    local_specialized = False
+    try:
+        local_obj = YOLO('shoplifting.pt')
+        local_specialized = True
+        print("Video analyze: specialized shoplifting model loaded.")
+    except Exception:
+        try:
+            local_obj = YOLO('yolov8n.pt')
+            print("Video analyze: using standard yolov8n object model.")
+        except Exception as e:
+            print(f"Video analyze: object model load failed: {e}")
+            local_obj = None
+
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        print("Video analyze: cannot open uploaded video.")
+        return 0, alerts, None
+
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    if not fps or fps <= 0:
+        fps = 25.0  # fallback when the container has no/garbage fps metadata
+
+    TARGET_CLASSES = [24, 25, 26, 28, 39, 40, 41, 42, 43, 67, 73, 74, 75, 76, 77, 78, 79]
+
+    frame_count = 0
+    last_alert_t = -ALERT_COOLDOWN  # video-seconds; guarantees the first alert fires
+    last_objects = []
+    local_states = {}  # {track_id: PersonState} - isolated from the global live state
+
+    # Annotated output video so the user can review / download the analyzed clip
+    os.makedirs("analyzed", exist_ok=True)
+    out_path = f"analyzed/analyzed_{cam_id}.mp4"
+    writer = None
+    output_video = None
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        video_t = frame_count / fps  # timestamp of this frame, in video-seconds
+
+        # 1. POSE INFERENCE (every frame, persist tracker IDs across this video)
+        results_pose = local_pose.track(frame, persist=True, verbose=False, classes=[0])
+
+        # 2. THEFT / OBJECT INFERENCE (every 5 frames, mirrors the live loop)
+        run_obj = (frame_count % 5 == 0) and (local_obj is not None)
+        detected_objects = []
+        if run_obj:
+            if local_specialized:
+                results_obj = local_obj(frame, verbose=False, conf=0.4)
+                if len(results_obj) > 0:
+                    boxes = results_obj[0].boxes.xyxy.cpu().numpy().astype(int)
+                    clss = results_obj[0].boxes.cls.cpu().numpy().astype(int)
+                    confs = results_obj[0].boxes.conf.cpu().numpy()
+                    for b, c, conf in zip(boxes, clss, confs):
+                        class_name = local_obj.names[c].lower()
+                        if any(k in class_name for k in ("shoplift", "suspicious", "theft", "fight")):
+                            cv2.rectangle(frame, (b[0], b[1]), (b[2], b[3]), (0, 0, 255), 3)
+                            cv2.putText(frame, f"{class_name.upper()} {conf:.2f}", (b[0], b[1] - 10),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+                            if video_t - last_alert_t > ALERT_COOLDOWN:
+                                a = trigger_alert(cam_id, cam_name, f"CRIMINAL ACTIVITY: {class_name}", frame, notify=notify)
+                                if a:
+                                    alerts.append(a)
+                                last_alert_t = video_t
+            else:
+                results_obj = local_obj(frame, verbose=False, conf=0.3)
+                if len(results_obj) > 0:
+                    boxes_obj = results_obj[0].boxes.xyxy.cpu().numpy().astype(int)
+                    cls_obj = results_obj[0].boxes.cls.cpu().numpy().astype(int)
+                    for b, c in zip(boxes_obj, cls_obj):
+                        if c in TARGET_CLASSES:
+                            detected_objects.append(b)
+                            cv2.rectangle(frame, (b[0], b[1]), (b[2], b[3]), (0, 165, 255), 2)
+            last_objects = detected_objects
+        else:
+            detected_objects = last_objects
+
+        # 3. PER-PERSON THEFT LOGIC (fallback model: holding -> concealment)
+        if results_pose[0].boxes.id is not None and not local_specialized:
+            boxes = results_pose[0].boxes.xyxy.cpu().numpy().astype(int)
+            track_ids = results_pose[0].boxes.id.cpu().numpy().astype(int)
+            try:
+                keypoints_all = results_pose[0].keypoints.xy.cpu().numpy()
+            except Exception:
+                keypoints_all = []
+
+            for i, track_id in enumerate(track_ids):
+                box = boxes[i]
+                kpts = keypoints_all[i] if len(keypoints_all) > i else []
+
+                if track_id not in local_states:
+                    local_states[track_id] = PersonState(track_id)
+                p_state = local_states[track_id]
+
+                left_has = check_object_in_hand(kpts, detected_objects, "LEFT")
+                right_has = check_object_in_hand(kpts, detected_objects, "RIGHT")
+                current_holding = left_has or right_has
+                holding_hand = "LEFT" if left_has else "RIGHT" if right_has else None
+
+                if current_holding:
+                    p_state.holding_object = True
+                    p_state.last_holding_time = video_t
+                    p_state.holding_hand = holding_hand
+                    cv2.putText(frame, f"HOLDING ({holding_hand})", (box[0], box[1] - 60),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+
+                if p_state.holding_object and not current_holding:
+                    time_since_hold = video_t - p_state.last_holding_time
+                    if time_since_hold < 3.0:
+                        hand = p_state.holding_hand
+                        if hand and check_concealment(kpts, hand):
+                            cv2.putText(frame, "THEFT DETECTED!", (box[0], box[1] - 80),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 0, 255), 3)
+                            cv2.rectangle(frame, (box[0], box[1]), (box[2], box[3]), (0, 0, 255), 3)
+                            if video_t - last_alert_t > ALERT_COOLDOWN:
+                                a = trigger_alert(cam_id, cam_name, "THEFT CONFIRMED (Item Concealed)", frame, notify=notify)
+                                if a:
+                                    alerts.append(a)
+                                last_alert_t = video_t
+                                p_state.holding_object = False
+                    elif time_since_hold > 3.0:
+                        p_state.holding_object = False
+                        p_state.holding_hand = None
+
+        # Write the annotated frame to the output video (lazy-init writer on first frame)
+        if writer is None:
+            fh, fw = frame.shape[:2]
+            for codec in ("avc1", "mp4v"):  # avc1 (H.264) plays in browsers; mp4v is the fallback
+                writer = cv2.VideoWriter(out_path, cv2.VideoWriter_fourcc(*codec), fps, (fw, fh))
+                if writer.isOpened():
+                    output_video = out_path
+                    break
+        if writer is not None and writer.isOpened():
+            writer.write(frame)
+
+        frame_count += 1
+
+    cap.release()
+    if writer is not None:
+        writer.release()
+    print(f"Video analyze: done. {frame_count} frames, {len(alerts)} alert(s). output={output_video}")
+    return frame_count, alerts, output_video
+
+
+@app.post("/video/analyze")
+async def analyze_video(file: UploadFile = File(...), camera_name: str = Form("Uploaded Video"), notify: bool = Form(True)):
+    os.makedirs("uploads", exist_ok=True)
+    temp_path = f"uploads/temp_{uuid.uuid4().hex}.mp4"
+    try:
+        with open(temp_path, "wb") as f:
+            f.write(await file.read())
+
+        cam_id = f"upload_{uuid.uuid4().hex[:8]}"
+        # Run the blocking OpenCV/YOLO loop off the event loop
+        frames, alerts, output_video = await asyncio.to_thread(analyze_video_file, temp_path, cam_id, camera_name, notify)
+        return {
+            "status": "success",
+            "frames_processed": frames,
+            "alert_count": len(alerts),
+            "alerts": alerts,
+            "output_video": output_video
+        }
+    except Exception as e:
+        print(f"Video analyze endpoint error: {e}")
+        return {"status": "error", "message": str(e)}
+    finally:
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
 
 
 @app.websocket("/ws")

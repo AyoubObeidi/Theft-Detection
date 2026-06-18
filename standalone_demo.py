@@ -40,19 +40,19 @@ def is_inside_roi(point, polygon):
 def send_telegram_alert(image_path, message):
     # Placeholder for Telegram API integration
     # You would use 'requests' library and your bot token here
-    print(f"--- TELEGRAM GÖNDERİLDİ: {message} | Resim: {image_path} ---")
+    print(f"--- TELEGRAM SENT: {message} | Image: {image_path} ---")
 
 def main():
     global last_alert_time
     
     # Load the YOLOv8 model
-    print("Model yükleniyor...")
+    print("Loading model...")
     model = YOLO('yolov8n.pt') 
 
     # Open the webcam
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():
-        print("Hata: Kamera açılamadı.")
+        print("Error: Could not open camera.")
         return
 
     # Set resolution
@@ -62,13 +62,13 @@ def main():
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
 
     # Setup mouse callback
-    cv2.namedWindow("Hırsızlık Algılama Sistemi")
-    cv2.setMouseCallback("Hırsızlık Algılama Sistemi", mouse_callback)
+    cv2.namedWindow("Theft Detection System")
+    cv2.setMouseCallback("Theft Detection System", mouse_callback)
 
-    print("Sistem hazır.")
-    print("- Sol tık: Yasaklı alan (ROI) noktası ekle.")
-    print("- Sağ tık: Yasaklı alanı temizle.")
-    print("- 'q': Çıkış.")
+    print("System ready.")
+    print("- Left click: Add restricted area (ROI) point.")
+    print("- Right click: Clear restricted area.")
+    print("- 'q': Quit.")
 
     while True:
         start_time = time.time()
@@ -117,12 +117,12 @@ def main():
                     # Loitering Check
                     if duration > LOITERING_THRESHOLD:
                         color = (0, 0, 255)
-                        status = "SUPHELI (BEKLEME)!"
+                        status = "SUSPICIOUS (LOITERING)!"
                         detection_alert = True
-                        alert_message = f"ID:{track_id} yasakli alanda {duration:.1f}sn bekliyor!"
+                        alert_message = f"ID:{track_id} loitering in restricted area for {duration:.1f}s!"
                     else:
                         color = (0, 165, 255) # Orange for warning
-                        status = f"Uyari ({duration:.1f}s)"
+                        status = f"Warning ({duration:.1f}s)"
                         
                     cv2.circle(frame, (center_x, center_y), 5, (0, 0, 255), -1)
                 else:
@@ -144,24 +144,24 @@ def main():
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"alerts/alert_{timestamp}.jpg"
             cv2.imwrite(filename, frame)
-            print(f"Alarm kaydedildi: {filename}")
+            print(f"Alert saved: {filename}")
             
             send_telegram_alert(filename, alert_message)
             last_alert_time = time.time()
             
             # Visual feedback on screen
-            cv2.putText(frame, "ALARM KAYDEDILDI!", (50, 150), 
+            cv2.putText(frame, "ALERT SAVED!", (50, 150),
                         cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
 
         # Global Alert Text
         if detection_alert:
-            cv2.putText(frame, "SUPHELI DAVRANIS TESPIT EDILDI!", (50, 100), 
+            cv2.putText(frame, "SUSPICIOUS BEHAVIOR DETECTED!", (50, 100),
                         cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 0, 255), 3)
 
         fps = 1.0 / (time.time() - start_time)
         cv2.putText(frame, f"FPS: {fps:.2f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
         
-        cv2.imshow("Hırsızlık Algılama Sistemi", frame)
+        cv2.imshow("Theft Detection System", frame)
 
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break

@@ -457,7 +457,7 @@ export default function CamerasPage() {
               <div className="p-3 bg-brand/10 border border-brand/20 text-brand rounded-lg text-xs flex items-start gap-2 leading-relaxed">
                 <HelpCircle className="w-4 h-4 mt-0.5 shrink-0" />
                 <span>
-                  <strong>Nasıl ROI Çizilir:</strong> Canlı görüntü üzerine fareyle tıklayarak polygon noktalarını yerleştirin. Noktaları sırasıyla birleştiren çizgiler oluşacaktır. En az 3 nokta yerleştirerek loitering (bekleme) ve yasaklı alan bölgesi tanımlayabilirsiniz. Tamamlandığında <strong>Save ROI coordinates</strong> butonuna tıklayın.
+                  <strong>How to Draw an ROI:</strong> Click on the live view to place polygon points. Lines will connect the points in order. Place at least 3 points to define a loitering and restricted-area zone. When finished, click the <strong>Save ROI coordinates</strong> button.
                 </span>
               </div>
 

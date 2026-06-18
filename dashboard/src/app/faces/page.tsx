@@ -51,7 +51,7 @@ export default function FacesPage() {
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !photo) {
-      setMessage({ text: "Lütfen tüm alanları doldurun ve bir fotoğraf seçin.", type: "error" });
+      setMessage({ text: "Please fill in all fields and select a photo.", type: "error" });
       return;
     }
 
@@ -71,7 +71,7 @@ export default function FacesPage() {
       const data = await res.json();
 
       if (res.ok && data.status === "success") {
-        setMessage({ text: `Yüz başarıyla kaydedildi: ${name}`, type: "success" });
+        setMessage({ text: `Face registered successfully: ${name}`, type: "success" });
         setName("");
         setPhoto(null);
         // Reset file input
@@ -80,18 +80,18 @@ export default function FacesPage() {
         
         await fetchFaces();
       } else {
-        setMessage({ text: data.message || "Yüz kaydı başarısız oldu.", type: "error" });
+        setMessage({ text: data.message || "Face registration failed.", type: "error" });
       }
     } catch (err) {
       console.error(err);
-      setMessage({ text: "Bağlantı hatası. Backend'in çalıştığından emin olun.", type: "error" });
+      setMessage({ text: "Connection error. Make sure the backend is running.", type: "error" });
     } finally {
       setSubmitting(false);
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Bu yüz tanıma kaydını silmek istediğinize emin misiniz?")) return;
+    if (!confirm("Are you sure you want to delete this face record?")) return;
     
     setDeleteLoadingId(id);
     setMessage(null);
@@ -103,14 +103,14 @@ export default function FacesPage() {
       const data = await res.json();
 
       if (res.ok && data.status === "success") {
-        setMessage({ text: "Kayıt başarıyla silindi.", type: "success" });
+        setMessage({ text: "Record deleted successfully.", type: "success" });
         await fetchFaces();
       } else {
-        setMessage({ text: data.message || "Kayıt silinemedi.", type: "error" });
+        setMessage({ text: data.message || "Record could not be deleted.", type: "error" });
       }
     } catch (err) {
       console.error(err);
-      setMessage({ text: "Bağlantı hatası.", type: "error" });
+      setMessage({ text: "Connection error.", type: "error" });
     } finally {
       setDeleteLoadingId(null);
     }
@@ -290,7 +290,7 @@ export default function FacesPage() {
                       onClick={() => handleDelete(face.id)}
                       disabled={deleteLoadingId === face.id}
                       className="p-2 text-foreground/50 hover:text-danger hover:bg-danger/10 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
-                      title="Sil"
+                      title="Delete"
                     >
                       {deleteLoadingId === face.id ? (
                         <Loader2 className="w-5 h-5 animate-spin" />

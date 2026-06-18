@@ -1,12 +1,12 @@
-# TheftGuard AI - Advanced Anti-Theft AI Security System
+# Theft Detection - Advanced Anti-Theft AI Security System
 
-TheftGuard AI is an advanced, enterprise-grade video surveillance and anti-theft security solution designed for retail spaces, supermarkets, and smart facilities. It utilizes cutting-edge Computer Vision, real-time Pose Estimation, Object Detection, and Facial Recognition algorithms to detect shoplifting, loitering, restricted area intrusions, and fighting. 
+Theft Detection is an advanced, enterprise-grade video surveillance and anti-theft security solution designed for retail spaces, supermarkets, and smart facilities. It utilizes cutting-edge Computer Vision, real-time Pose Estimation, Object Detection, and Facial Recognition algorithms to detect shoplifting, loitering, restricted area intrusions, and fighting. 
 
 The system leverages optimized, multi-threaded pipelines to analyze concurrent camera feeds (local webcams or RTSP network cameras) synchronously, triggering instant browser-synthesized audio sirens and sending remote alerts via Email and Telegram.
 
 **Live Demo:** [theft-detection-dusky.vercel.app](https://theft-detection-dusky.vercel.app/)
 
-[![TheftGuard Dashboard Showcase](docs/dashboard.png)](https://theft-detection-dusky.vercel.app/)
+[![Theft Detection Dashboard Showcase](docs/dashboard.png)](https://theft-detection-dusky.vercel.app/)
 
 ---
 
@@ -69,10 +69,9 @@ The system leverages optimized, multi-threaded pipelines to analyze concurrent c
 *   CUDA Enabled NVIDIA GPU (Highly recommended for fluid real-time inference)
 
 ### 1. Backend Configuration
-Clone the repository and install the Python dependencies:
+Open the project folder and install the Python dependencies:
 
 ```bash
-git clone https://github.com/vahapogut/Theft-Detection.git
 cd Theft-Detection
 pip install -r requirements.txt
 ```
@@ -190,5 +189,6 @@ Distributed under the MIT License. See `LICENSE` for more information.
 
 ---
 
-*Project Maintainer & Developer: **Abdulvahap Öğüt***  
-*GitHub Repository:* [vahapogut/Theft-Detection](https://github.com/vahapogut/Theft-Detection)
+*Project Maintainer & Developer: **Abdulvahap Öğüt***
+#   T h e f t - D e t e c t i o n  
+ 
