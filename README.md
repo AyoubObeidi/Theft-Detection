@@ -4,9 +4,6 @@ Theft Detection is an advanced, enterprise-grade video surveillance and anti-the
 
 The system leverages optimized, multi-threaded pipelines to analyze concurrent camera feeds (local webcams or RTSP network cameras) synchronously, triggering instant browser-synthesized audio sirens and sending remote alerts via Email and Telegram.
 
-**Live Demo:** [theft-detection-dusky.vercel.app](https://theft-detection-dusky.vercel.app/)
-
-[![Theft Detection Dashboard Showcase](docs/dashboard.png)](https://theft-detection-dusky.vercel.app/)
 
 ---
 
@@ -190,5 +187,6 @@ Distributed under the MIT License. See `LICENSE` for more information.
 ---
 
 *Project Maintainer & Developer: **Abdulvahap Öğüt***
-#   T h e f t - D e t e c t i o n  
+#   T h e f t - D e t e c t i o n 
+ 
  
