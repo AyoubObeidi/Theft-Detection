@@ -186,7 +186,5 @@ Distributed under the MIT License. See `LICENSE` for more information.
 
 ---
 
-*Project Maintainer & Developer: **Abdulvahap Öğüt***
-#   T h e f t - D e t e c t i o n 
  
  
